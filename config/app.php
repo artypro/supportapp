@@ -168,6 +168,7 @@ return [
         \Illuminate\Foundation\Support\Providers\RouteServiceProvider::class,
         Illuminate\Cookie\CookieServiceProvider::class,
         Illuminate\Validation\ValidationServiceProvider::class,
+        Illuminate\Bus\BusServiceProvider::class,
         App\Providers\TelegramServiceProvider::class,
     ],
 ];
