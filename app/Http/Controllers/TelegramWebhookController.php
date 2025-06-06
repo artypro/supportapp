@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\Request;
 use Telegram\Bot\Api;
 use App\Services\TelegramTicketService;
 use Illuminate\Support\Facades\App;
+use Telegram\Bot\Objects\Update as UpdateObject;
 
 class TelegramWebhookController extends Controller
 {
