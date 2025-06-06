@@ -13,7 +13,7 @@ return new class extends Migration {
         Schema::create('ticket_messages', function (Blueprint $table) {
             $table->id();
             $table->foreignId('ticket_id')->constrained()->onDelete('cascade');
-            $table->foreignId('sender_id')->constrained()->onDelete('cascade');
+            $table->foreignId('sender_id')->constrained('users')->onDelete('cascade');
             $table->text('text');
             $table->timestamps();
             $table->softDeletes();
