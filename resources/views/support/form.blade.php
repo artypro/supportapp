@@ -19,7 +19,7 @@
                 @endif
 
                 <div class="max-w-xl">
-                    <form method="post" action="{{ route('support.submitTicket') }}" class="mt-6 space-y-6">
+                    <form method="post" action="{{ route('tickets.store') }}" class="mt-6 space-y-6">
                         @csrf
                         <div>
                             <label for="category">{{ __('Select Category') }}</label>
