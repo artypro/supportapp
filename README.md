@@ -91,6 +91,11 @@ TELEGRAM_BOT_TOKEN=your-telegram-bot-token
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/your/slack/webhook
 ```
 
+To use the SQLite database, run the following command to create an empty database file:
+```bash
+touch database/database.sqlite
+```
+
 Make sure to set these before running migrations or using the bot/webhook features.
 
 ## License
