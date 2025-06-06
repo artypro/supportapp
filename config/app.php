@@ -162,10 +162,12 @@ return [
          * Application Service Providers...
          */
         App\Providers\AppServiceProvider::class,
-        App\Providers\AuthServiceProvider::class,
-        App\Providers\BroadcastServiceProvider::class,
-        App\Providers\EventServiceProvider::class,
-        App\Providers\RouteServiceProvider::class,
+        \Illuminate\Auth\AuthServiceProvider::class,
+        \Illuminate\Broadcasting\BroadcastServiceProvider::class,
+        \Illuminate\Events\EventServiceProvider::class,
+        \Illuminate\Foundation\Support\Providers\RouteServiceProvider::class,
+        Illuminate\Cookie\CookieServiceProvider::class,
+        Illuminate\Validation\ValidationServiceProvider::class,
         App\Providers\TelegramServiceProvider::class,
     ],
 ];
