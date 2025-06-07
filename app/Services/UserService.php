@@ -14,6 +14,7 @@ class UserService
             'name' => 'Telegram User ' . $chatId,
             'email' => 'telegram_' . $chatId . '@example.com',
             'password' => bcrypt(bin2hex(random_bytes(8))),
+            'telegram_chat_id' => $chatId
         ]);
     }
 }
