@@ -2,111 +2,114 @@
 
 namespace App\Services;
 
-use App\Models\Ticket;
+use App\Dto\TelegramFileDto;
+use App\Exceptions\TelegramFileTooLargeException;
 use App\Models\Category;
-use App\Models\TicketMessage;
-use App\Models\User;
-use App\Notifications\TicketSubmittedSlack;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Notification;
-use Telegram\Bot\Api;
+use App\Services\Telegram\States\SubjectState;
+use App\Services\Telegram\States\MessageState;
+use App\Dto\TicketContextDto;
+use Telegram\Bot\Objects\Document;
+use App\Services\Telegram\StateStorageService;
+use Telegram\Bot\Objects\Message;
+use App\Services\Telegram\TelegramApiService;
 
 class TelegramTicketService
 {
-    public function __construct(protected Api $telegram, protected SlackTicketNotifier $notifier, protected UserService $userService)
-    {
-    }
+    const MAX_FILE_SIZE        = 5 * 1024 * 1024; // 5MB
+    const STATE_STEP_SUBJECT   = 'subject';
+    const STATE_STEP_MESSAGE   = 'message';
+    const START_DIALOGUE_WORDS = ['/start', 'hello'];
 
-    public function handleUpdate($update)
+    public function __construct(
+        protected UserService $userService,
+        protected TelegramFileService $telegramFileService,
+        protected TicketNumberService $ticketNumberService,
+        protected MessageBuilder $messageBuilder,
+        protected StateStorageService $stateStorage,
+        protected TelegramApiService $telegramApiService
+    ) {}
+
+    public function handleUpdate($update): bool
     {
         if ($update->has('message')) {
-            $chatId = $update->getMessage()->getChat()->getId();
-            $text   = $update->getMessage()->getText();
+            return $this->handleMessageUpdate($update->getMessage());
+        }
 
-            $state = Cache::get("tg_ticket_state_{$chatId}");
-            if ($state && isset($state['step'])) {
-                if ($state['step'] === 'subject') {
-                    $state['subject'] = mb_substr($text, 0, 2000);
-                    $state['step'] = 'message';
-                    Cache::put("tg_ticket_state_{$chatId}", $state, now()->addMinutes(30));
-                    $this->sendMessage($chatId, "Please provide the message body for your ticket (max 2000 chars).");
-                    return true;
-                }
+        if ($update->has('callback_query')) {
+            return $this->handleCallbackQueryUpdate($update->getCallbackQuery());
+        }
 
-                if ($state['step'] === 'message') {
-                    $state['message'] = mb_substr($text, 0, 2000);
-                    // Use TelegramUserService to get or create the sender
-                    $sender = $this->userService->findOrCreateByChatId($chatId);
+        return false;
+    }
 
-                    $ticket = Ticket::create([
-                        'user_id'     => $sender->id,
-                        'channel'     => Ticket::CHANNEL_TLGM,
-                        'category_id' => $state['category_id'],
-                        'subject'     => $state['subject'],
-                        'status'      => Ticket::STATUS_NEW,
-                    ]);
+    private function buildContext(int $chatId, string $text, array $state, TelegramFileDto|null $fileInfo): TicketContextDto
+    {
+        return new TicketContextDto(
+            chatId: $chatId,
+            text: $text,
+            state: $state,
+            sender: $this->userService->findOrCreateByChatId($chatId),
+            fileInfo: $fileInfo,
+        );
+    }
 
-                    TicketMessage::create([
-                        'ticket_id' => $ticket->id,
-                        'sender_id' => $sender->id,
-                        'text'      => $state['message'],
-                    ]);
+    private function handleMessageUpdate(Message $message): bool
+    {
+        $chatId = $message->getChat()->getId();
+        $messageText   = $message->getText();
+        $document = $message->getDocument();
 
-                    // Send Slack notification
-                    $this->notifier->notify($ticket);
+        try {
+            $fileInfo = $this->getFileInfo($document);
+        } catch (TelegramFileTooLargeException $e) {
+            $this->telegramApiService->sendMessage($chatId, $this->messageBuilder->get(MessageBuilder::FILE_TOO_LARGE));
+            return true;
+        }
 
-                    $ticketNumber = str_pad($ticket->id, 5, '0', STR_PAD_LEFT);
-                    $this->sendMessage($chatId, "Ticket with ID {$ticketNumber} created.");
-                    Cache::forget("tg_ticket_state_{$chatId}");
-                    return true;
-                }
+        $state = $this->stateStorage->get($chatId);
+        if ($state && isset($state['step'])) {
+            $context = $this->buildContext($chatId, $messageText, $state, $fileInfo);
+            if ($state['step'] === self::STATE_STEP_SUBJECT) {
+                return (new SubjectState())->handle($message, $context);
             }
-            if ($text === '/start' || strtolower($text) === 'hello') {
-                $this->sendGreeting($chatId);
-                return true;
+            if ($state['step'] === self::STATE_STEP_MESSAGE) {
+                return (new MessageState())->handle($message, $context);
             }
         }
-        if ($update->has('callback_query')) {
-            $this->handleCallbackQuery($update->getCallbackQuery());
+
+        if (in_array(strtolower($messageText), self::START_DIALOGUE_WORDS)) {
+            $this->telegramApiService->sendGreeting($chatId);
+            return true;
+        }
+
+        return false;
+    }
+
+    private function handleCallbackQueryUpdate($callbackQuery): bool
+    {
+        $chatId       = $callbackQuery->getMessage()->getChat()->getId();
+        $categorySlug = $callbackQuery->getData();
+        $category = Category::where('slug', $categorySlug)->first();
+
+        if ($category) {
+            $this->stateStorage->set($chatId, [
+                'step'        => 'subject',
+                'category_id' => $category->id,
+            ]);
+
+            $this->telegramApiService->sendMessage($chatId, "You selected: {$category->name}. " . $this->messageBuilder->get(MessageBuilder::GREETING));
+
             return true;
         }
         return false;
     }
 
-    public function sendGreeting($chatId)
+    private function getFileInfo(Document|null $document): TelegramFileDto|null
     {
-        $categories = Category::all();
-        $keyboard   = [];
-        foreach ($categories as $category) {
-            $keyboard[] = [['text' => $category->name, 'callback_data' => $category->slug]];
+        if ($document) {
+            return $this->telegramFileService->processDocument($document, self::MAX_FILE_SIZE);
         }
-        $replyMarkup = ['inline_keyboard' => $keyboard];
-        $this->sendMessage($chatId, 'Welcome! Please select a category:', $replyMarkup);
-    }
 
-    public function handleCallbackQuery($callbackQuery)
-    {
-        $chatId       = $callbackQuery->getMessage()->getChat()->getId();
-        $categorySlug = $callbackQuery->getData();
-        $category = Category::where('slug', $categorySlug)->first();
-        if ($category) {
-            Cache::put("tg_ticket_state_{$chatId}", [
-                'step'        => 'subject',
-                'category_id' => $category->id,
-            ], now()->addMinutes(30));
-            $this->sendMessage($chatId, "You selected: {$category->name}. Please provide a subject for your ticket (max 2000 chars).");
-        }
-    }
-
-    public function sendMessage($chatId, $text, $replyMarkup = null)
-    {
-        $params = [
-            'chat_id' => $chatId,
-            'text'    => $text,
-        ];
-        if ($replyMarkup) {
-            $params['reply_markup'] = json_encode($replyMarkup);
-        }
-        $this->telegram->sendMessage($params);
+        return null;
     }
 }
