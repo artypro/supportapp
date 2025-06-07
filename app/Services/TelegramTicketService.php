@@ -60,7 +60,7 @@ class TelegramTicketService
         $document = $message->getDocument();
 
         if ($document) {
-            $messageText = $document->caption;
+            $messageText = $message->caption;
         }
 
         try {
