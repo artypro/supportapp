@@ -39,7 +39,7 @@
                         </div>
                         <div>
                             <x-input-label for="message" :value="__('Message')" />
-                            <x-text-input id="message" name="message" type="text" class="mt-1 block w-full" maxlength="2000" required autofocus autocomplete="message" />
+                            <x-textarea id="message" name="message" class="mt-1 block w-full" maxlength="2000" required autofocus autocomplete="message"/>
                             <x-input-error class="mt-2" :messages="$errors->get('message')" />
                         </div>
 
