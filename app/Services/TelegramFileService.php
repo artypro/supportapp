@@ -6,6 +6,7 @@ use Telegram\Bot\Api;
 use App\Exceptions\TelegramFileTooLargeException;
 use Telegram\Bot\Objects\Document;
 use App\Dto\TelegramFileDto;
+use Illuminate\Support\Facades\Storage;
 
 class TelegramFileService
 {
@@ -18,6 +19,15 @@ class TelegramFileService
         return self::TELEGRAM_FILE_API_URL . config('services.telegram.bot_token') . "/$filePath";
     }
 
+    private function downloadAndStoreFile(string $fileUrl, string $fileName): string
+    {
+        $fileContents = file_get_contents($fileUrl);
+        $storagePath = 'tickets/' . uniqid() . '_' . ($fileName ?: 'file');
+        Storage::disk('local')->put($storagePath, $fileContents);
+
+        return $storagePath;
+    }
+
     public function processDocument(Document $document, int $maxSize = 5242880): TelegramFileDto
     {
         $fileId = $document->getFileId();
@@ -27,9 +37,12 @@ class TelegramFileService
             throw new TelegramFileTooLargeException();
         }
         $file = $this->telegram->getFile(['file_id' => $fileId]);
+        $fileUrl = $this->buildFileUrl($file->getFilePath());
+
+        $storagePath = $this->downloadAndStoreFile($fileUrl, $fileName);
 
         return new TelegramFileDto(
-            fileUrl: $this->buildFileUrl($file->getFilePath()),
+            fileUrl: $storagePath,
             fileName: $fileName,
             fileSize: $fileSize,
         );

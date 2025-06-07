@@ -59,6 +59,10 @@ class TelegramTicketService
         $messageText   = $message->getText();
         $document = $message->getDocument();
 
+        if ($document) {
+            $messageText = $document->caption;
+        }
+
         try {
             $fileInfo = $this->getFileInfo($document);
         } catch (TelegramFileTooLargeException $e) {

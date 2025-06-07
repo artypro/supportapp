@@ -14,7 +14,7 @@ class MessageBuilder
     protected array $messages = [
         self::GREETING => 'Welcome to the support bot! Please enter the subject of your ticket.',
         self::FILE_TOO_LARGE => 'The file you attached is too large. Maximum allowed size is 5MB.',
-        self::FILE_ATTACHMENT_PROMPT => 'Please provide the message body for your ticket (max 2000 chars). You can also attach a file (max 5MB).',
+        self::FILE_ATTACHMENT_PROMPT => 'Please enter your message (up to 2000 characters), or attach a file (up to 5MB) and include your message in the file caption.',
         self::TICKET_CREATED => 'Your ticket has been created successfully! Ticket number: :number',
         self::ERROR => 'An error occurred. Please try again later.',
     ];
