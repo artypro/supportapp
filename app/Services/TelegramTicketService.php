@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Ticket;
 use App\Models\Category;
 use App\Models\TicketMessage;
+use App\Models\User;
 use App\Notifications\TicketSubmittedSlack;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Notification;
@@ -12,7 +13,7 @@ use Telegram\Bot\Api;
 
 class TelegramTicketService
 {
-    public function __construct(protected Api $telegram, protected Notification $notifier)
+    public function __construct(protected Api $telegram, protected SlackTicketNotifier $notifier, protected UserService $userService)
     {
     }
 
@@ -30,25 +31,30 @@ class TelegramTicketService
                     Cache::put("tg_ticket_state_{$chatId}", $state, now()->addMinutes(30));
                     $this->sendMessage($chatId, "Please provide the message body for your ticket (max 2000 chars).");
                     return true;
-                } elseif ($state['step'] === 'message') {
+                }
+
+                if ($state['step'] === 'message') {
                     $state['message'] = mb_substr($text, 0, 2000);
+                    // Use TelegramUserService to get or create the sender
+                    $sender = $this->userService->findOrCreateByChatId($chatId);
+
                     $ticket = Ticket::create([
-                        'user_id'     => null,
+                        'user_id'     => $sender->id,
                         'channel'     => Ticket::CHANNEL_TLGM,
                         'category_id' => $state['category_id'],
                         'subject'     => $state['subject'],
                         'status'      => Ticket::STATUS_NEW,
                     ]);
-                    if (class_exists('App\\Models\\TicketMessage')) {
-                        TicketMessage::create([
-                            'ticket_id' => $ticket->id,
-                            'sender_id' => null,
-                            'text'      => $state['message'],
-                        ]);
-                    }
+
+                    TicketMessage::create([
+                        'ticket_id' => $ticket->id,
+                        'sender_id' => $sender->id,
+                        'text'      => $state['message'],
+                    ]);
+
                     // Send Slack notification
-                    $this->notifier::route('slack', config('services.slack.webhook_url'))
-                        ->notify(new TicketSubmittedSlack($ticket));
+                    $this->notifier->notify($ticket);
+
                     $ticketNumber = str_pad($ticket->id, 5, '0', STR_PAD_LEFT);
                     $this->sendMessage($chatId, "Ticket with ID {$ticketNumber} created.");
                     Cache::forget("tg_ticket_state_{$chatId}");
